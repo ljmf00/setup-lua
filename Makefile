@@ -18,4 +18,5 @@ dist/index.js: src/index.ts node_modules webpack.config.ts
 push: venv
 	venv/bin/markdown-to-presentation push \
 		--pages-branch release \
+		--default-branch master \
 		README.md LICENSE action.yml dist/index.js patch/
