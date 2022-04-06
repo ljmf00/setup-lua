@@ -1,0 +1,50 @@
+name: test
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  posix:
+    strategy:
+      fail-fast: false
+      matrix:
+        lua-version: ["5.1.5", "5.2.4", "5.3.5"]
+        os: [macos-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+      - run: make
+      - uses: ./
+        with:
+          lua-version: ${{ matrix.lua-version }}
+
+      - name: test lua
+        run: |
+          which lua
+          lua -e "print(_VERSION)"
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        luaVersion: ["5.1.5", "5.2.4", "5.3.5"]
+        platform: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+      - run: make
+      - uses: ./
+        with:
+          lua-version: ${{ matrix.luaVersion }}
+          platform: ${{ matrix.platform }}
+      - name: test lua
+        run: |
+          which lua
+          lua -e "print(_VERSION)"
