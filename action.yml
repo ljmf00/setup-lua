@@ -10,10 +10,14 @@ inputs:
     description: version of Lua to setup
     required: false
     default: '5.3.5'
+  install-luarocks:
+    description: whether to install luarocks or not
+    required: false
+    default: 'false'
   luarocks-version:
     description: version of LuaRocks to setup
     required: false
-    default: '3.1.3'
+    default: '3.8.0'
   platform:
     description: the target platform (e.g. -A Win32 | x64)
     required: false
