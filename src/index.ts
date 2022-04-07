@@ -1,7 +1,7 @@
-import { getInput, addPath, setFailed } from '@actions/core';
+import { getInput, addPath, setFailed, exportVariable } from '@actions/core';
 import { exec } from '@actions/exec';
-import { cp, mkdirP } from '@actions/io';
-import { downloadTool } from '@actions/tool-cache';
+import { cp, mv, mkdirP } from '@actions/io';
+import { downloadTool, extractTar, extractZip } from '@actions/tool-cache';
 
 import * as path from 'path'
 import * as fs from 'fs'
@@ -10,6 +10,11 @@ const md5File = require('md5-file');
 
 const SOURCE_DIRECTORY = path.join(process.cwd(), ".source/")
 const INSTALL_PREFIX = path.join(process.cwd(), ".lua/")
+
+const LUAROCKS_BUILD_PREFIX = ".build-luarocks"
+
+const LUA_PREFIX = ".lua" // default location for existing Lua installation
+const LUAROCKS_PREFIX = ".luarocks" // default location for LuaRocks installation
 
 interface VersionAliases { [index:string]:string }
 
@@ -108,6 +113,11 @@ function getLuaVersion() {
   return VERSION_ALIASES[luaVersion] || luaVersion || "5.1.5"
 }
 
+function getLuaRocksVersion() {
+  const luaRocksVersion : string = getInput('luarocks-version', { required: false })
+  return luaRocksVersion
+}
+
 function getPlatform(): string | undefined {
   const platform: string = getInput('platfrom', { required: false });
   return platform || undefined;
@@ -194,13 +204,161 @@ async function buildAndInstall(sourcePath: string, platform: string | undefined)
   addPath(path.join(INSTALL_PREFIX, "bin"));
 }
 
+async function installLuaRocks(luaRocksVersion: string, platform: string | undefined)
+{
+  const luaRocksExtractPath: string = path.join(process.env["RUNNER_TEMP"], LUAROCKS_BUILD_PREFIX, `luarocks-${luaRocksVersion}`)
+  const luaRocksInstallPath: string = path.join(process.cwd(), LUAROCKS_PREFIX)
+
+  const luaInstallPath = path.join(process.cwd(), LUA_PREFIX)
+
+  if (process.platform != "win32") {
+
+    const sourceTar = await downloadTool(`https://luarocks.org/releases/luarocks-${luaRocksVersion}.tar.gz`)
+    await mkdirP(luaRocksExtractPath)
+    await extractTar(sourceTar, path.join(process.env["RUNNER_TEMP"], LUAROCKS_BUILD_PREFIX))
+
+    const configureArgs = []
+    configureArgs.push(`--with-lua="${luaInstallPath}"`)
+    configureArgs.push(`--prefix="${luaRocksInstallPath}"`)
+
+    await exec(`./configure ${configureArgs.join(" ")}`, undefined, {
+      cwd: luaRocksExtractPath
+    })
+
+    await exec("make", undefined, {
+      cwd: luaRocksExtractPath
+    })
+
+    // NOTE: make build step is only necessary for luarocks 2.x
+    if (luaRocksVersion.match(/^2\./)) {
+      await exec("make build", undefined, {
+        cwd: luaRocksExtractPath
+      })
+    }
+
+    await exec("make install", undefined, {
+      cwd: luaRocksExtractPath
+    })
+
+    // Update environment to use luarocks directly
+    let lrPath = ""
+
+    await exec(`${path.join(luaRocksInstallPath, "bin", "luarocks")} path --lr-bin`, undefined, {
+      listeners: {
+        stdout: (data) => {
+          lrPath += data.toString()
+        }
+      }
+    })
+
+    if (lrPath != "") {
+      addPath(lrPath.trim());
+    }
+
+    let luaPath = ""
+
+    await exec("luarocks path --lr-path", undefined, {
+      listeners: {
+        stdout: (data) => {
+          luaPath += data.toString()
+        }
+      }
+    })
+
+    luaPath = luaPath.trim()
+
+    let luaCpath = ""
+
+    await exec("luarocks path --lr-cpath", undefined, {
+      listeners: {
+        stdout: (data) => {
+          luaCpath += data.toString()
+        }
+      }
+    })
+
+    luaCpath = luaCpath.trim()
+
+    if (luaPath != "") {
+      exportVariable("LUA_PATH", ";;" + luaPath)
+    }
+
+    if (luaCpath != "") {
+      exportVariable("LUA_CPATH", ";;" + luaCpath)
+    }
+  } else {
+    const arch = (platform && platform == "x64") ? "64" : "32"
+    const sourceZip = await downloadTool(`https://luarocks.github.io/luarocks/releases/luarocks-${luaRocksVersion}-windows-${arch}.zip`)
+    await mkdirP(luaRocksInstallPath)
+
+    const binInstallPath = path.join(luaRocksInstallPath, "bin")
+    await mkdirP(binInstallPath)
+
+    const extractPath = path.join(process.env["RUNNER_TEMP"], "luarocks")
+    await mkdirP(extractPath)
+    await extractZip(sourceZip, extractPath)
+
+    const extractedFolder = path.join(extractPath, `luarocks-${luaRocksVersion}-windows-${arch}`)
+    await fs.stat(path.join(extractedFolder, `luarocks-admin.exe`), async function(err, stat) {
+        if(err == null) {
+          await mv(
+            path.join(extractedFolder, `luarocks-admin.exe`),
+            binInstallPath
+          )
+        }
+    })
+
+    await mv(
+      path.join(extractedFolder, `luarocks.exe`),
+      binInstallPath
+    )
+
+    showDirectory(binInstallPath)
+    addPath(binInstallPath)
+
+    if (arch == "64")
+    {
+      mkdirP("C:/Program Files/luarocks/");
+    } else {
+      mkdirP("C:/Program Files (x86)/luarocks/");
+    }
+
+    mkdirP(`${process.env.APPDATA}\\luarocks`);
+
+    const luaVersion = getLuaVersion()
+    const shortLuaVersion = luaVersion.split('.').slice(0,2).join('.')
+
+    await exec(`luarocks config --scope system lua_dir ${luaInstallPath}`, undefined, {
+      cwd: binInstallPath
+    })
+    await exec(`luarocks config --scope system lua_version ${shortLuaVersion}`, undefined, {
+      cwd: binInstallPath
+    })
+
+    await exec(`luarocks config --scope user lua_dir ${luaInstallPath}`, undefined, {
+      cwd: binInstallPath
+    })
+    await exec(`luarocks config --scope user lua_version ${shortLuaVersion}`, undefined, {
+      cwd: binInstallPath
+    })
+  }
+}
+
 async function main() {
-  await installSystemDependencies()
   const luaVersion = getLuaVersion()
-  const platform = getPlatform();
+  const luaRocksVersion = getLuaRocksVersion()
+  const platform = getPlatform()
+
+  await installSystemDependencies()
   const sourcePath = await downloadSource(luaVersion)
   await addCMakeBuildScripts(sourcePath, luaVersion)
+
   await buildAndInstall(sourcePath, platform)
+
+  const isLuaRocks : string = getInput('install-luarocks', { required: false })
+  if (isLuaRocks == 'true') {
+    await installLuaRocks(luaRocksVersion, platform)
+  }
 }
 
 // main().catch(err => {

@@ -24,11 +24,18 @@ jobs:
       - uses: ./
         with:
           lua-version: ${{ matrix.lua-version }}
+          install-luarocks: true
 
       - name: test lua
         run: |
           which lua
           lua -e "print(_VERSION)"
+      - name: test luarocks
+        run: |
+          luarocks
+          luarocks config
+          luarocks install moonscript
+          lua -e 'require("moon").p({1,2,3})'
   windows:
     runs-on: windows-latest
     strategy:
@@ -44,7 +51,16 @@ jobs:
         with:
           lua-version: ${{ matrix.luaVersion }}
           platform: ${{ matrix.platform }}
+          install-luarocks: true
       - name: test lua
         run: |
           which lua
           lua -e "print(_VERSION)"
+      - name: test luarocks
+        run: |
+          luarocks
+          luarocks config
+
+          # FIXME: mingw32-gcc doesn't work
+          # luarocks install moonscript
+          # lua -e 'require("moon").p({1,2,3})'
