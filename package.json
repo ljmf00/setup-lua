@@ -8,7 +8,7 @@
     "md5-file": "^5.0.0"
   },
   "devDependencies": {
-    "source-map-loader": "^3.0.1",
+    "source-map-loader": "^4.0.0",
     "terser-webpack-plugin": "^5.3.3",
     "ts-loader": "^9.3.0",
     "ts-node": "^10.8.1",
