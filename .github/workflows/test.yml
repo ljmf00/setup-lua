@@ -18,7 +18,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v3
       - run: make
       - uses: ./
@@ -44,7 +44,7 @@ jobs:
         luaVersion: ["5.1.5", "5.2.4", "5.3.5"]
         platform: [Win32, x64]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v3
       - run: make
       - uses: ./
